@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SRT Drift Corrector</title>
+<style>
+  :root {
+    --bg: #f4f4f4;
+    --panel: #ffffff;
+    --panel2: #f0f0f0;
+    --border: #d6d6d6;
+    --text: #222;
+    --muted: #666;
+    --accent: #4b74ff;
+    --accent-hover: #385fe0;
+    --danger: #c62828;
+    --success: #177245;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 14px;
+  }
+  .wrap {
+    width: min(1100px, calc(100% - 32px));
+    margin: 28px auto 40px;
+  }
+  h1 {
+    margin: 0 0 5px;
+    font-size: 27px;
+    font-weight: 650;
+  }
+  .subtitle {
+    color: var(--muted);
+    margin-bottom: 22px;
+    line-height: 1.45;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px;
+    margin-bottom: 15px;
+    box-shadow: 0 1px 2px rgba(0,0,0,.04);
+  }
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  input[type=file] { display: none; }
+  .button, button {
+    border: 1px solid var(--border);
+    background: #fff;
+    color: var(--text);
+    border-radius: 8px;
+    padding: 9px 14px;
+    font: inherit;
+    cursor: pointer;
+  }
+  .button:hover, button:hover { background: #f7f7f7; }
+  .primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+    font-weight: 600;
+  }
+  .primary:hover {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+  }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .filename {
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .anchors {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+  }
+  @media (max-width: 760px) {
+    .anchors { grid-template-columns: 1fr; }
+  }
+  .anchor h2 {
+    font-size: 16px;
+    margin: 0 0 14px;
+  }
+  .field { margin-bottom: 13px; }
+  label {
+    display: block;
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+  select, input[type=text] {
+    width: 100%;
+    min-width: 0;
+    border: 1px solid #c9c9c9;
+    background: #fff;
+    border-radius: 7px;
+    padding: 9px 10px;
+    font: inherit;
+    color: var(--text);
+  }
+  .time-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1fr;
+    gap: 7px;
+    align-items: center;
+  }
+  .time-row span {
+    text-align: center;
+    color: #999;
+    display: none;
+  }
+  .hint {
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  .formula {
+    background: var(--panel2);
+    border-radius: 8px;
+    padding: 12px 13px;
+    margin-top: 4px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+    overflow-x: auto;
+  }
+  .status {
+    min-height: 20px;
+    margin-top: 10px;
+    font-size: 13px;
+  }
+  .status.error { color: var(--danger); }
+  .status.ok { color: var(--success); }
+  .empty {
+    padding: 28px 10px;
+    text-align: center;
+    color: var(--muted);
+  }
+  .preview {
+    max-height: 320px;
+    overflow: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  th, td {
+    padding: 8px 10px;
+    border-bottom: 1px solid #e7e7e7;
+    text-align: left;
+    vertical-align: top;
+  }
+  th {
+    position: sticky;
+    top: 0;
+    background: #f1f1f1;
+    font-weight: 600;
+  }
+  td.time {
+    white-space: nowrap;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .footer-actions {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .drop {
+    border: 1.5px dashed #bbb;
+    border-radius: 10px;
+    padding: 15px;
+    margin-top: 13px;
+    color: var(--muted);
+    text-align: center;
+  }
+  .drop.drag {
+    border-color: var(--accent);
+    background: #f5f7ff;
+  }
+  .small {
+    font-size: 11px;
+    color: var(--muted);
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>SRT Drift Corrector</h1>
+  <div class="subtitle">
+    Choose two subtitle points, enter the <b>correct</b> start time for each,
+    and the tool applies a linear correction to the <b>entire SRT file</b> —
+    including subtitles before, between, and after the two reference points.
+  </div>
+
+  <div class="card">
+    <div class="topbar">
+      <label class="button" for="fileInput">＋ Load SRT file</label>
+      <input id="fileInput" type="file" accept=".srt,text/plain">
+      <span id="filename" class="filename">No file loaded</span>
+    </div>
+    <div id="drop" class="drop">Or drag &amp; drop an .srt file here</div>
+    <div id="loadStatus" class="status"></div>
+  </div>
+
+  <div id="editor" style="display:none">
+    <div class="card anchors">
+      <div class="anchor">
+        <h2>First reference subtitle</h2>
+        <div class="field">
+          <label for="cue1">Choose subtitle</label>
+          <select id="cue1"></select>
+        </div>
+        <div class="field">
+          <label>Correct start timing <span class="small">(hh:mm:ss,ms)</span></label>
+          <div class="time-row">
+            <input id="h1" type="text" inputmode="numeric" maxlength="8" aria-label="Hours">
+            <input id="m1" type="text" inputmode="numeric" maxlength="2" aria-label="Minutes">
+            <input id="s1" type="text" inputmode="numeric" maxlength="2" aria-label="Seconds">
+            <input id="ms1" type="text" inputmode="numeric" maxlength="3" aria-label="Milliseconds">
+          </div>
+        </div>
+        <div id="original1" class="hint"></div>
+      </div>
+
+      <div class="anchor">
+        <h2>Second reference subtitle</h2>
+        <div class="field">
+          <label for="cue2">Choose subtitle</label>
+          <select id="cue2"></select>
+        </div>
+        <div class="field">
+          <label>Correct start timing <span class="small">(hh:mm:ss,ms)</span></label>
+          <div class="time-row">
+            <input id="h2" type="text" inputmode="numeric" maxlength="8" aria-label="Hours">
+            <input id="m2" type="text" inputmode="numeric" maxlength="2" aria-label="Minutes">
+            <input id="s2" type="text" inputmode="numeric" maxlength="2" aria-label="Seconds">
+            <input id="ms2" type="text" inputmode="numeric" maxlength="3" aria-label="Milliseconds">
+          </div>
+        </div>
+        <div id="original2" class="hint"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="hint">
+        Linear correction is calculated from the two reference points and
+        <b>extrapolated over the whole file</b>. Both start and end times of
+        every subtitle are adjusted by the same linear mapping.
+      </div>
+      <div id="formula" class="formula">Select two subtitles to see the correction.</div>
+      <div id="status" class="status"></div>
+    </div>
+
+    <div class="card">
+      <div class="footer-actions">
+        <div>
+          <b>Preview</b>
+          <div id="count" class="small"></div>
+        </div>
+        <button id="download" class="primary" disabled>Apply correction &amp; download SRT</button>
+      </div>
+      <div class="preview" style="margin-top:12px">
+        <table>
+          <thead>
+            <tr><th>#</th><th>Original timing</th><th>Corrected timing</th><th>Text</th></tr>
+          </thead>
+          <tbody id="previewBody">
+            <tr><td colspan="4" class="empty">Load an SRT file to begin.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+let cues = [];
+let rawText = "";
+let fileName = "subtitles.srt";
+
+const $ = id => document.getElementById(id);
+
+function parseTime(str) {
+  const m = str.trim().replace(".", ",").match(/^(\d+):(\d{2}):(\d{2}),(\d{3})$/);
+  if (!m) throw new Error("Invalid SRT time: " + str);
+  return (((+m[1] * 60 + +m[2]) * 60 + +m[3]) * 1000 + +m[4]);
+}
+
+function formatTime(ms) {
+  ms = Math.max(0, Math.round(ms));
+  const h = Math.floor(ms / 3600000);
+  ms %= 3600000;
+  const m = Math.floor(ms / 60000);
+  ms %= 60000;
+  const s = Math.floor(ms / 1000);
+  const milli = ms % 1000;
+  return String(h).padStart(2,"0") + ":" +
+         String(m).padStart(2,"0") + ":" +
+         String(s).padStart(2,"0") + "," +
+         String(milli).padStart(3,"0");
+}
+
+function fillTime(prefix, ms) {
+  ms = Math.max(0, Math.round(ms));
+  const h = Math.floor(ms / 3600000);
+  ms %= 3600000;
+  const m = Math.floor(ms / 60000);
+  ms %= 60000;
+  const s = Math.floor(ms / 1000);
+  const milli = ms % 1000;
+  $("h"+prefix).value = String(h).padStart(2,"0");
+  $("m"+prefix).value = String(m).padStart(2,"0");
+  $("s"+prefix).value = String(s).padStart(2,"0");
+  $("ms"+prefix).value = String(milli).padStart(3,"0");
+}
+
+function readTime(prefix) {
+  const h = Number($("h"+prefix).value || 0);
+  const m = Number($("m"+prefix).value || 0);
+  const s = Number($("s"+prefix).value || 0);
+  const ms = Number($("ms"+prefix).value || 0);
+  if (![h,m,s,ms].every(Number.isFinite) ||
+      h < 0 || m < 0 || m > 59 || s < 0 || s > 59 || ms < 0 || ms > 999) {
+    throw new Error("Please enter a valid time.");
+  }
+  return (((h * 60 + m) * 60 + s) * 1000 + ms);
+}
+
+function cueLabel(c, maxText=58) {
+  const clean = c.text.replace(/\s+/g, " ").trim();
+  const short = clean.length > maxText ? clean.slice(0,maxText-1) + "…" : clean;
+  return c.index + " — " + short + " — " + formatTime(c.start);
+}
+
+function parseSRT(text) {
+  const normalized = text.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n");
+  const blocks = normalized.split(/\n{2,}/);
+  const result = [];
+  const timingRe = /(\d+:\d{2}:\d{2}[,.]\d{3})\s*-->\s*(\d+:\d{2}:\d{2}[,.]\d{3})/;
+
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i];
+    const match = block.match(timingRe);
+    if (!match) continue;
+
+    const timingLineIndex = block.slice(0, match.index).split("\n").length - 1;
+    const lines = block.split("\n");
+    const textLines = lines.slice(timingLineIndex + 1);
+    const textOnly = textLines.join("\n").trim();
+
+    result.push({
+      index: result.length + 1,
+      start: parseTime(match[1]),
+      end: parseTime(match[2]),
+      text: textOnly,
+      block,
+      match: match[0],
+      matchIndex: match.index,
+      originalStart: match[1],
+      originalEnd: match[2]
+    });
+  }
+  if (!result.length) throw new Error("No valid SRT subtitle cues were found.");
+  return { normalized, cues: result };
+}
+
+function populateSelects() {
+  ["cue1","cue2"].forEach(id => {
+    const select = $(id);
+    select.innerHTML = "";
+    cues.forEach(c => {
+      const option = document.createElement("option");
+      option.value = String(cues.indexOf(c));
+      option.textContent = cueLabel(c);
+      select.appendChild(option);
+    });
+  });
+  $("cue1").value = "0";
+  $("cue2").value = String(Math.max(0, cues.length - 1));
+  syncFieldsFromSelection();
+}
+
+function syncFieldsFromSelection() {
+  const c1 = cues[+$("cue1").value];
+  const c2 = cues[+$("cue2").value];
+  if (!c1 || !c2) return;
+
+  fillTime("1", c1.start);
+  fillTime("2", c2.start);
+  $("original1").textContent = "Original start: " + formatTime(c1.start);
+  $("original2").textContent = "Original start: " + formatTime(c2.start);
+  calculate();
+}
+
+function calculate() {
+  if (!cues.length) return;
+
+  const i1 = +$("cue1").value;
+  const i2 = +$("cue2").value;
+  const c1 = cues[i1], c2 = cues[i2];
+
+  $("status").className = "status";
+  $("status").textContent = "";
+
+  try {
+    if (i1 === i2) throw new Error("Choose two different subtitles.");
+    if (c1.start === c2.start) throw new Error("The two selected subtitles have the same original start time.");
+    if (i1 > i2) throw new Error("For clarity, choose the earlier subtitle as the first reference and the later subtitle as the second.");
+
+    const corrected1 = readTime("1");
+    const corrected2 = readTime("2");
+    if (corrected2 <= corrected1) throw new Error("The second corrected time must be later than the first corrected time.");
+
+    const scale = (corrected2 - corrected1) / (c2.start - c1.start);
+    const offset = corrected1 - scale * c1.start;
+
+    $("formula").textContent =
+      "corrected time = " + scale.toFixed(9) + " × original time " +
+      (offset >= 0 ? "+ " : "− ") + Math.abs(offset / 1000).toFixed(3) + " sec";
+
+    const correctionPct = (scale - 1) * 100;
+    $("status").className = "status ok";
+    $("status").textContent =
+      "Scale: " + scale.toFixed(6) +
+      " (" + (correctionPct >= 0 ? "+" : "") + correctionPct.toFixed(3) +
+      "%)  •  This correction is extrapolated before and after the reference subtitles.";
+
+    renderPreview(scale, offset);
+    $("download").disabled = false;
+  } catch (err) {
+    $("formula").textContent = "Select two subtitles and enter valid corrected timings.";
+    $("status").className = "status error";
+    $("status").textContent = err.message;
+    $("download").disabled = true;
+    renderPreview(null, null);
+  }
+}
+
+function corrected(ms, scale, offset) {
+  return Math.max(0, scale * ms + offset);
+}
+
+function renderPreview(scale, offset) {
+  const body = $("previewBody");
+  body.innerHTML = "";
+
+  if (scale === null) {
+    body.innerHTML = '<tr><td colspan="4" class="empty">Enter two valid reference times to preview the correction.</td></tr>';
+    return;
+  }
+
+  // Show a useful sample: first 4, both anchors, last 4, without duplicates.
+  const indexes = new Set();
+  for (let i=0; i<Math.min(4,cues.length); i++) indexes.add(i);
+  indexes.add(+$("cue1").value);
+  indexes.add(+$("cue2").value);
+  for (let i=Math.max(0,cues.length-4); i<cues.length; i++) indexes.add(i);
+  const list = [...indexes].sort((a,b)=>a-b);
+
+  list.forEach(i => {
+    const c = cues[i];
+    const tr = document.createElement("tr");
+    const correctedStart = corrected(c.start, scale, offset);
+    const correctedEnd = corrected(c.end, scale, offset);
+    const text = c.text.replace(/\s+/g, " ").trim();
+    tr.innerHTML =
+      "<td>" + c.index + "</td>" +
+      '<td class="time">' + formatTime(c.start) + " → " + formatTime(c.end) + "</td>" +
+      '<td class="time">' + formatTime(correctedStart) + " → " + formatTime(correctedEnd) + "</td>" +
+      "<td>" + escapeHtml(text.length > 100 ? text.slice(0,99)+"…" : text) + "</td>";
+    body.appendChild(tr);
+  });
+
+  $("count").textContent = cues.length + " subtitle cues loaded • preview shows beginning, anchors and end";
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, ch => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+  }[ch]));
+}
+
+function buildCorrectedSRT(scale, offset) {
+  // Replace only the timestamp pair inside each original block.
+  // Everything else — numbering, text, styling tags, line breaks — is preserved.
+  const blocks = rawText.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n").split(/(\n{2,})/);
+  let cueNo = 0;
+  const timingRe = /(\d+:\d{2}:\d{2}[,.]\d{3})\s*-->\s*(\d+:\d{2}:\d{2}[,.]\d{3})/;
+
+  return blocks.map(part => {
+    const match = part.match(timingRe);
+    if (!match) return part;
+
+    const c = cues[cueNo++];
+    const newStart = formatTime(corrected(c.start, scale, offset));
+    const newEnd = formatTime(corrected(c.end, scale, offset));
+    return part.slice(0, match.index) +
+      newStart + " --> " + newEnd +
+      part.slice(match.index + match[0].length);
+  }).join("");
+}
+
+function loadFile(file) {
+  if (!file) return;
+  if (!file.name.toLowerCase().endsWith(".srt") && file.type && !file.type.includes("text")) {
+    $("loadStatus").className = "status error";
+    $("loadStatus").textContent = "Please choose an .srt file.";
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      rawText = String(reader.result);
+      fileName = file.name || "subtitles.srt";
+      const parsed = parseSRT(rawText);
+      cues = parsed.cues;
+
+      $("filename").textContent = fileName;
+      $("loadStatus").className = "status ok";
+      $("loadStatus").textContent = cues.length + " subtitle cues loaded.";
+      $("editor").style.display = "";
+      populateSelects();
+    } catch (e) {
+      cues = [];
+      $("editor").style.display = "none";
+      $("loadStatus").className = "status error";
+      $("loadStatus").textContent = e.message;
+    }
+  };
+  reader.readAsText(file);
+}
+
+$("fileInput").addEventListener("change", e => loadFile(e.target.files[0]));
+$("cue1").addEventListener("change", syncFieldsFromSelection);
+$("cue2").addEventListener("change", syncFieldsFromSelection);
+
+["h1","m1","s1","ms1","h2","m2","s2","ms2"].forEach(id => {
+  $(id).addEventListener("input", calculate);
+  $(id).addEventListener("blur", () => {
+    // Normalize numeric fields after editing.
+    const el = $(id);
+    if (el.value !== "" && /^\d+$/.test(el.value)) el.value = el.value.padStart(id.endsWith("ms") ? 3 : 2, "0");
+    calculate();
+  });
+});
+
+$("download").addEventListener("click", () => {
+  try {
+    const i1 = +$("cue1").value, i2 = +$("cue2").value;
+    const c1 = cues[i1], c2 = cues[i2];
+    const corrected1 = readTime("1"), corrected2 = readTime("2");
+    const scale = (corrected2 - corrected1) / (c2.start - c1.start);
+    const offset = corrected1 - scale * c1.start;
+    const output = buildCorrectedSRT(scale, offset);
+
+    const blob = new Blob(["\uFEFF", output], {type:"text/plain;charset=utf-8"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const base = fileName.replace(/\.srt$/i, "");
+    a.download = base + "-drift-corrected.srt";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (e) {
+    $("status").className = "status error";
+    $("status").textContent = e.message;
+  }
+});
+
+const drop = $("drop");
+["dragenter","dragover"].forEach(evt => drop.addEventListener(evt, e => {
+  e.preventDefault();
+  drop.classList.add("drag");
+}));
+["dragleave","drop"].forEach(evt => drop.addEventListener(evt, e => {
+  e.preventDefault();
+  drop.classList.remove("drag");
+}));
+drop.addEventListener("drop", e => loadFile(e.dataTransfer.files[0]));
+</script>
+</body>
+</html>
