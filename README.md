@@ -36,4 +36,4 @@ new_time = new_A + (orig_time − orig_A) × scale
 - Works entirely client-side — just a static HTML/CSS/JS file.
 - Best results come from picking reference points as far apart as possible.
 
-![enter image description here](https://files.catbox.moe/yrl4te.png)
+![enter image description here](https://files.catbox.moe/52y1xj.png)
