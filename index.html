@@ -214,8 +214,8 @@
     background: #fff;
     border: 1px solid var(--border);
     border-radius: 8px;
-    /* 10 rows of 32px, plus the list's padding and border */
-    max-height: calc(10 * 32px + 8px + 2px);
+    /* Always 10 rows of 32px tall (plus padding and border), so the fields below never move */
+    height: calc(10 * 32px + 8px + 2px);
     overflow-y: auto;
     padding: 4px;
   }
@@ -231,7 +231,6 @@
     cursor: pointer;
   }
   .picker-row:hover { background: #f4f4f4; }
-  .picker-row.active { box-shadow: inset 0 0 0 1px var(--accent); }
   .picker-row .num {
     color: var(--muted);
     font-size: 12px;
@@ -257,15 +256,6 @@
     color: var(--muted);
     font-size: 13px;
   }
-  .picker-chosen {
-    font-size: 12px;
-    color: var(--muted);
-    margin-top: 6px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .picker-chosen b { color: var(--text); font-weight: 600; }
   mark {
     background: #fff1a8;
     color: inherit;
@@ -310,7 +300,6 @@
           </div>
           <div id="list1" class="picker-list" role="listbox" aria-label="Subtitles"></div>
           <input id="cue1" type="hidden">
-          <div id="chosen1" class="picker-chosen"></div>
         </div>
         <div class="field">
           <label>Correct start timing <span class="small">(hh:mm:ss,ms)</span></label>
@@ -334,7 +323,6 @@
           </div>
           <div id="list2" class="picker-list" role="listbox" aria-label="Subtitles"></div>
           <input id="cue2" type="hidden">
-          <div id="chosen2" class="picker-chosen"></div>
         </div>
         <div class="field">
           <label>Correct start timing <span class="small">(hh:mm:ss,ms)</span></label>
@@ -459,7 +447,6 @@ function populateSelects() {
   $("cue2").value = String(Math.max(0, cues.length - 1));
   ["1","2"].forEach(which => {
     $("search"+which).value = "";
-    pickerState[which].active = +$("cue"+which).value;
     renderPicker(which, true);
   });
   syncAllFields();
@@ -496,19 +483,10 @@ function highlightNumber(n, query) {
   return /^\d+$/.test(q) && s.startsWith(q) ? "<mark>" + q + "</mark>" + s.slice(q.length) : s;
 }
 
-const pickerState = { "1": { list: [], active: 0 }, "2": { list: [], active: 0 } };
-
-// The highlighted row already shows the chosen subtitle, so this line only
-// appears when a filter hides that row.
-function showChosen(which) {
-  const c = cues[+$("cue"+which).value];
-  if (!c || pickerState[which].list.includes(c)) { $("chosen"+which).textContent = ""; return; }
-  const text = c.text.replace(/\s+/g, " ").trim();
-  $("chosen"+which).innerHTML = "Selected: <b>#" + c.number + "</b> " +
-    escapeHtml(text.length > 60 ? text.slice(0, 59) + "…" : text) + " · " + formatTime(c.start);
-}
+const pickerState = { "1": { list: [] }, "2": { list: [] } };
 
 // The list stays open under the search box; typing filters it.
+// The highlighted row is always the selected subtitle.
 function renderPicker(which, scrollToSelected) {
   const state = pickerState[which];
   const query = $("search"+which).value;
@@ -518,29 +496,26 @@ function renderPicker(which, scrollToSelected) {
 
   if (!state.list.length) {
     listEl.innerHTML = '<div class="picker-none">No line number or text matches “' + escapeHtml(query.trim()) + '”.</div>';
-  } else {
-    state.active = Math.min(Math.max(state.active, 0), state.list.length - 1);
-    listEl.innerHTML = state.list.map((c, i) => {
-      const idx = c.index - 1;
-      const text = c.text.replace(/\s+/g, " ").trim();
-      return '<div class="picker-row' + (i === state.active ? " active" : "") + (idx === selected ? " selected" : "") +
-        '" role="option" id="opt' + which + "-" + i + '" data-i="' + i + '" aria-selected="' + (idx === selected) + '">' +
-        '<span class="num">' + highlightNumber(c.number, query) + "</span>" +
-        '<span class="txt">' + highlightText(text, query) + "</span>" +
-        '<span class="t">' + formatTime(c.start) + "</span></div>";
-    }).join("");
-    $("search"+which).setAttribute("aria-activedescendant", "opt" + which + "-" + state.active);
+    return;
   }
-  showChosen(which);
-  const target = listEl.querySelector(scrollToSelected ? ".picker-row.selected" : ".picker-row.active");
-  if (target) {
-    // Scroll only inside the list, never the page.
-    const top = target.offsetTop - listEl.offsetTop;
-    if (scrollToSelected) listEl.scrollTop = top - (listEl.clientHeight - target.offsetHeight) / 2;
-    else if (top < listEl.scrollTop) listEl.scrollTop = top;
-    else if (top + target.offsetHeight > listEl.scrollTop + listEl.clientHeight)
-      listEl.scrollTop = top + target.offsetHeight - listEl.clientHeight;
-  }
+  listEl.innerHTML = state.list.map((c, i) => {
+    const isSel = c.index - 1 === selected;
+    const text = c.text.replace(/\s+/g, " ").trim();
+    return '<div class="picker-row' + (isSel ? " selected" : "") +
+      '" role="option" data-i="' + i + '" aria-selected="' + isSel + '">' +
+      '<span class="num">' + highlightNumber(c.number, query) + "</span>" +
+      '<span class="txt">' + highlightText(text, query) + "</span>" +
+      '<span class="t">' + formatTime(c.start) + "</span></div>";
+  }).join("");
+
+  const target = listEl.querySelector(".picker-row.selected");
+  if (!target) { listEl.scrollTop = 0; return; }
+  // Scroll only inside the list, never the page.
+  const top = target.offsetTop - listEl.offsetTop;
+  if (scrollToSelected) listEl.scrollTop = top - (listEl.clientHeight - target.offsetHeight) / 2;
+  else if (top < listEl.scrollTop) listEl.scrollTop = top;
+  else if (top + target.offsetHeight > listEl.scrollTop + listEl.clientHeight)
+    listEl.scrollTop = top + target.offsetHeight - listEl.clientHeight;
 }
 
 function pickCue(which, cue) {
@@ -553,26 +528,31 @@ function pickCue(which, cue) {
 ["1","2"].forEach(which => {
   const input = $("search"+which);
   const state = pickerState[which];
-  input.addEventListener("input", () => { state.active = 0; renderPicker(which); });
+  input.addEventListener("input", () => {
+    // Filtering selects a match, so the highlight never points somewhere else:
+    // an exact line number wins; otherwise keep the current pick if it still
+    // matches, or take the first match.
+    const list = searchCues(input.value);
+    const current = cues[+$("cue"+which).value];
+    const q = input.value.trim().replace(/^#/, "");
+    let next = current;
+    if (list.length && /^\d+$/.test(q) && String(list[0].number) === q) next = list[0];
+    else if (list.length && input.value.trim() && !list.includes(current)) next = list[0];
+    if (next !== current) pickCue(which, next);
+    else renderPicker(which, true);
+  });
   input.addEventListener("keydown", e => {
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      state.active++;
-      renderPicker(which);
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      state.active--;
-      renderPicker(which);
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      if (state.list[state.active]) pickCue(which, state.list[state.active]);
-    }
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    e.preventDefault();
+    const list = state.list;
+    if (!list.length) return;
+    const pos = list.indexOf(cues[+$("cue"+which).value]);
+    const nextPos = pos < 0 ? 0 : Math.min(Math.max(pos + (e.key === "ArrowDown" ? 1 : -1), 0), list.length - 1);
+    if (nextPos !== pos) pickCue(which, list[nextPos]);
   });
   $("list"+which).addEventListener("click", e => {
     const row = e.target.closest(".picker-row");
-    if (!row) return;
-    state.active = +row.dataset.i;
-    pickCue(which, state.list[state.active]);
+    if (row) pickCue(which, state.list[+row.dataset.i]);
   });
 });
 
