@@ -398,18 +398,22 @@ function populateSelects() {
   });
   $("cue1").value = "0";
   $("cue2").value = String(Math.max(0, cues.length - 1));
-  syncFieldsFromSelection();
+  syncAllFields();
 }
 
-function syncFieldsFromSelection() {
-  const c1 = cues[+$("cue1").value];
-  const c2 = cues[+$("cue2").value];
-  if (!c1 || !c2) return;
+// Refill the corrected-time fields for one reference ("1" or "2") from its
+// selected subtitle. Only the changed reference is touched, so values already
+// entered for the other reference are kept.
+function syncFieldsFromSelection(which) {
+  const c = cues[+$("cue"+which).value];
+  if (!c) return;
+  fillTime(which, c.start);
+  $("original"+which).textContent = "Original start: " + formatTime(c.start);
+}
 
-  fillTime("1", c1.start);
-  fillTime("2", c2.start);
-  $("original1").textContent = "Original start: " + formatTime(c1.start);
-  $("original2").textContent = "Original start: " + formatTime(c2.start);
+function syncAllFields() {
+  syncFieldsFromSelection("1");
+  syncFieldsFromSelection("2");
   calculate();
 }
 
@@ -553,8 +557,8 @@ function loadFile(file) {
 }
 
 $("fileInput").addEventListener("change", e => loadFile(e.target.files[0]));
-$("cue1").addEventListener("change", syncFieldsFromSelection);
-$("cue2").addEventListener("change", syncFieldsFromSelection);
+$("cue1").addEventListener("change", () => { syncFieldsFromSelection("1"); calculate(); });
+$("cue2").addEventListener("change", () => { syncFieldsFromSelection("2"); calculate(); });
 
 ["h1","m1","s1","ms1","h2","m2","s2","ms2"].forEach(id => {
   $(id).addEventListener("input", calculate);
