@@ -145,38 +145,6 @@
   }
   .status.error { color: var(--danger); }
   .status.ok { color: var(--success); }
-  .empty {
-    padding: 28px 10px;
-    text-align: center;
-    color: var(--muted);
-  }
-  .preview {
-    max-height: 320px;
-    overflow: auto;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-  }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
-  }
-  th, td {
-    padding: 8px 10px;
-    border-bottom: 1px solid #e7e7e7;
-    text-align: left;
-    vertical-align: top;
-  }
-  th {
-    position: sticky;
-    top: 0;
-    background: #f1f1f1;
-    font-weight: 600;
-  }
-  td.time {
-    white-space: nowrap;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  }
   .footer-actions {
     display: flex;
     justify-content: space-between;
@@ -221,16 +189,12 @@
     color: var(--text);
   }
   .picker-list {
-    position: absolute;
-    z-index: 5;
-    left: 0;
-    right: 0;
-    top: calc(100% + 4px);
+    margin-top: 8px;
     background: #fff;
     border: 1px solid var(--border);
     border-radius: 8px;
-    box-shadow: 0 8px 24px rgba(0,0,0,.14);
-    max-height: 260px;
+    /* 10 rows of 32px, plus the list's padding and border */
+    max-height: calc(10 * 32px + 8px + 2px);
     overflow-y: auto;
     padding: 4px;
   }
@@ -239,12 +203,14 @@
     grid-template-columns: 42px minmax(0,1fr) auto;
     gap: 10px;
     align-items: baseline;
+    height: 32px;
+    line-height: 18px;
     padding: 7px 8px;
     border-radius: 6px;
     cursor: pointer;
   }
   .picker-row:hover { background: #f4f4f4; }
-  .picker-row.active { background: #eef2ff; }
+  .picker-row.active { box-shadow: inset 0 0 0 1px var(--accent); }
   .picker-row .num {
     color: var(--muted);
     font-size: 12px;
@@ -262,6 +228,7 @@
     color: var(--muted);
     white-space: nowrap;
   }
+  .picker-row.selected { background: #eef2ff; }
   .picker-row.selected .txt { font-weight: 600; }
   .picker-row.selected .num { color: var(--accent); font-weight: 600; }
   .picker-none {
@@ -317,10 +284,10 @@
           <label for="search1">Choose subtitle</label>
           <div class="picker" id="picker1">
             <span class="search-icon" aria-hidden="true">&#8981;</span>
-            <input id="search1" type="search" placeholder="Type a line number or words…" autocomplete="off"
-                   role="combobox" aria-expanded="false" aria-controls="list1" aria-autocomplete="list">
-            <div id="list1" class="picker-list" role="listbox" hidden></div>
+            <input id="search1" type="search" placeholder="Filter by line number or words…" autocomplete="off"
+                   aria-controls="list1">
           </div>
+          <div id="list1" class="picker-list" role="listbox" aria-label="Subtitles"></div>
           <input id="cue1" type="hidden">
           <div id="chosen1" class="picker-chosen"></div>
         </div>
@@ -342,10 +309,10 @@
           <label for="search2">Choose subtitle</label>
           <div class="picker" id="picker2">
             <span class="search-icon" aria-hidden="true">&#8981;</span>
-            <input id="search2" type="search" placeholder="Type a line number or words…" autocomplete="off"
-                   role="combobox" aria-expanded="false" aria-controls="list2" aria-autocomplete="list">
-            <div id="list2" class="picker-list" role="listbox" hidden></div>
+            <input id="search2" type="search" placeholder="Filter by line number or words…" autocomplete="off"
+                   aria-controls="list2">
           </div>
+          <div id="list2" class="picker-list" role="listbox" aria-label="Subtitles"></div>
           <input id="cue2" type="hidden">
           <div id="chosen2" class="picker-chosen"></div>
         </div>
@@ -370,27 +337,11 @@
       </div>
       <div id="formula" class="formula">Select two subtitles to see the correction.</div>
       <div id="status" class="status"></div>
-    </div>
-
-    <div class="card">
-      <div class="footer-actions">
-        <div>
-          <b>Preview</b>
-          <div id="count" class="small"></div>
-        </div>
+      <div class="footer-actions" style="margin-top:12px; justify-content:flex-end">
         <button id="download" class="primary" disabled>Apply correction &amp; download SRT</button>
       </div>
-      <div class="preview" style="margin-top:12px">
-        <table>
-          <thead>
-            <tr><th>#</th><th>Original timing</th><th>Corrected timing</th><th>Text</th></tr>
-          </thead>
-          <tbody id="previewBody">
-            <tr><td colspan="4" class="empty">Load an SRT file to begin.</td></tr>
-          </tbody>
-        </table>
-      </div>
     </div>
+
   </div>
 </div>
 
@@ -489,8 +440,9 @@ function populateSelects() {
   $("cue2").value = String(Math.max(0, cues.length - 1));
   ["1","2"].forEach(which => {
     $("search"+which).value = "";
-    closePicker(which);
+    pickerState[which].active = +$("cue"+which).value;
     showChosen(which);
+    renderPicker(which, true);
   });
   syncAllFields();
 }
@@ -536,12 +488,8 @@ function showChosen(which) {
     escapeHtml(text.length > 60 ? text.slice(0, 59) + "…" : text) + " · " + formatTime(c.start);
 }
 
-function closePicker(which) {
-  $("list"+which).hidden = true;
-  $("search"+which).setAttribute("aria-expanded", "false");
-}
-
-function renderPicker(which) {
+// The list stays open under the search box; typing filters it.
+function renderPicker(which, scrollToSelected) {
   const state = pickerState[which];
   const query = $("search"+which).value;
   const listEl = $("list"+which);
@@ -563,17 +511,21 @@ function renderPicker(which) {
     }).join("");
     $("search"+which).setAttribute("aria-activedescendant", "opt" + which + "-" + state.active);
   }
-  listEl.hidden = false;
-  $("search"+which).setAttribute("aria-expanded", "true");
-  const active = listEl.querySelector(".picker-row.active");
-  if (active) active.scrollIntoView({ block: "nearest" });
+  const target = listEl.querySelector(scrollToSelected ? ".picker-row.selected" : ".picker-row.active");
+  if (target) {
+    // Scroll only inside the list, never the page.
+    const top = target.offsetTop - listEl.offsetTop;
+    if (scrollToSelected) listEl.scrollTop = top - (listEl.clientHeight - target.offsetHeight) / 2;
+    else if (top < listEl.scrollTop) listEl.scrollTop = top;
+    else if (top + target.offsetHeight > listEl.scrollTop + listEl.clientHeight)
+      listEl.scrollTop = top + target.offsetHeight - listEl.clientHeight;
+  }
 }
 
 function pickCue(which, cue) {
   $("cue"+which).value = String(cue.index - 1);
-  $("search"+which).value = "";
-  closePicker(which);
   showChosen(which);
+  renderPicker(which);
   syncFieldsFromSelection(which);
   calculate();
 }
@@ -581,39 +533,26 @@ function pickCue(which, cue) {
 ["1","2"].forEach(which => {
   const input = $("search"+which);
   const state = pickerState[which];
-  input.addEventListener("focus", () => {
-    // Open at the currently selected subtitle so nearby lines are visible.
-    state.active = input.value ? 0 : Math.max(0, +$("cue"+which).value);
-    renderPicker(which);
-  });
   input.addEventListener("input", () => { state.active = 0; renderPicker(which); });
   input.addEventListener("keydown", e => {
-    const open = !$("list"+which).hidden;
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      if (open) state.active++;
+      state.active++;
       renderPicker(which);
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      if (open) state.active--;
+      state.active--;
       renderPicker(which);
     } else if (e.key === "Enter") {
       e.preventDefault();
-      if (open && state.list[state.active]) pickCue(which, state.list[state.active]);
-    } else if (e.key === "Escape") {
-      closePicker(which);
-    } else if (e.key === "Tab") {
-      closePicker(which);
+      if (state.list[state.active]) pickCue(which, state.list[state.active]);
     }
   });
-  $("list"+which).addEventListener("mousedown", e => {
+  $("list"+which).addEventListener("click", e => {
     const row = e.target.closest(".picker-row");
     if (!row) return;
-    e.preventDefault();
-    pickCue(which, state.list[+row.dataset.i]);
-  });
-  document.addEventListener("mousedown", e => {
-    if (!$("picker"+which).contains(e.target)) closePicker(which);
+    state.active = +row.dataset.i;
+    pickCue(which, state.list[state.active]);
   });
 });
 
@@ -666,53 +605,17 @@ function calculate() {
       " (" + (correctionPct >= 0 ? "+" : "") + correctionPct.toFixed(3) +
       "%)  •  This correction is extrapolated before and after the reference subtitles.";
 
-    renderPreview(scale, offset);
     $("download").disabled = false;
   } catch (err) {
     $("formula").textContent = "Select two subtitles and enter valid corrected timings.";
     $("status").className = "status error";
     $("status").textContent = err.message;
     $("download").disabled = true;
-    renderPreview(null, null);
   }
 }
 
 function corrected(ms, scale, offset) {
   return Math.max(0, scale * ms + offset);
-}
-
-function renderPreview(scale, offset) {
-  const body = $("previewBody");
-  body.innerHTML = "";
-
-  if (scale === null) {
-    body.innerHTML = '<tr><td colspan="4" class="empty">Enter two valid reference times to preview the correction.</td></tr>';
-    return;
-  }
-
-  // Show a useful sample: first 4, both anchors, last 4, without duplicates.
-  const indexes = new Set();
-  for (let i=0; i<Math.min(4,cues.length); i++) indexes.add(i);
-  indexes.add(+$("cue1").value);
-  indexes.add(+$("cue2").value);
-  for (let i=Math.max(0,cues.length-4); i<cues.length; i++) indexes.add(i);
-  const list = [...indexes].sort((a,b)=>a-b);
-
-  list.forEach(i => {
-    const c = cues[i];
-    const tr = document.createElement("tr");
-    const correctedStart = corrected(c.start, scale, offset);
-    const correctedEnd = corrected(c.end, scale, offset);
-    const text = c.text.replace(/\s+/g, " ").trim();
-    tr.innerHTML =
-      "<td>" + c.number + "</td>" +
-      '<td class="time">' + formatTime(c.start) + " → " + formatTime(c.end) + "</td>" +
-      '<td class="time">' + formatTime(correctedStart) + " → " + formatTime(correctedEnd) + "</td>" +
-      "<td>" + escapeHtml(text.length > 100 ? text.slice(0,99)+"…" : text) + "</td>";
-    body.appendChild(tr);
-  });
-
-  $("count").textContent = cues.length + " subtitle cues loaded • preview shows beginning, anchors and end";
 }
 
 function escapeHtml(s) {
