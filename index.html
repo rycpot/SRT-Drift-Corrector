@@ -300,7 +300,6 @@
             <input id="ms1" type="text" inputmode="numeric" maxlength="3" aria-label="Milliseconds">
           </div>
         </div>
-        <div id="original1" class="hint"></div>
       </div>
 
       <div class="anchor">
@@ -325,7 +324,6 @@
             <input id="ms2" type="text" inputmode="numeric" maxlength="3" aria-label="Milliseconds">
           </div>
         </div>
-        <div id="original2" class="hint"></div>
       </div>
     </div>
 
@@ -441,7 +439,6 @@ function populateSelects() {
   ["1","2"].forEach(which => {
     $("search"+which).value = "";
     pickerState[which].active = +$("cue"+which).value;
-    showChosen(which);
     renderPicker(which, true);
   });
   syncAllFields();
@@ -480,9 +477,11 @@ function highlightNumber(n, query) {
 
 const pickerState = { "1": { list: [], active: 0 }, "2": { list: [], active: 0 } };
 
+// The highlighted row already shows the chosen subtitle, so this line only
+// appears when a filter hides that row.
 function showChosen(which) {
   const c = cues[+$("cue"+which).value];
-  if (!c) { $("chosen"+which).textContent = ""; return; }
+  if (!c || pickerState[which].list.includes(c)) { $("chosen"+which).textContent = ""; return; }
   const text = c.text.replace(/\s+/g, " ").trim();
   $("chosen"+which).innerHTML = "Selected: <b>#" + c.number + "</b> " +
     escapeHtml(text.length > 60 ? text.slice(0, 59) + "…" : text) + " · " + formatTime(c.start);
@@ -511,6 +510,7 @@ function renderPicker(which, scrollToSelected) {
     }).join("");
     $("search"+which).setAttribute("aria-activedescendant", "opt" + which + "-" + state.active);
   }
+  showChosen(which);
   const target = listEl.querySelector(scrollToSelected ? ".picker-row.selected" : ".picker-row.active");
   if (target) {
     // Scroll only inside the list, never the page.
@@ -524,7 +524,6 @@ function renderPicker(which, scrollToSelected) {
 
 function pickCue(which, cue) {
   $("cue"+which).value = String(cue.index - 1);
-  showChosen(which);
   renderPicker(which);
   syncFieldsFromSelection(which);
   calculate();
@@ -563,7 +562,6 @@ function syncFieldsFromSelection(which) {
   const c = cues[+$("cue"+which).value];
   if (!c) return;
   fillTime(which, c.start);
-  $("original"+which).textContent = "Original start: " + formatTime(c.start);
 }
 
 function syncAllFields() {
