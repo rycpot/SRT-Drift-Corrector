@@ -13,7 +13,8 @@ two reference points.
 You:
 
 1.  Load the `.srt` file.
-2.  Choose an earlier subtitle and enter its correct time.
+2.  Choose an earlier subtitle (search by its line number or by words
+    in its text) and enter its correct time.
 3.  Choose a later subtitle and enter its correct time.
 4.  The tool calculates a **linear correction** between those two
     points.
